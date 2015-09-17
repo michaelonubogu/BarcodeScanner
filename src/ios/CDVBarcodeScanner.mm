@@ -65,6 +65,7 @@
 @property (nonatomic, retain) AVCaptureSession*           captureSession;
 @property (nonatomic, retain) AVCaptureVideoPreviewLayer* previewLayer;
 @property (nonatomic, retain) NSString*                   alternateXib;
+@property (nonatomic, retain) NSString*                   capturedText;
 @property (nonatomic)         BOOL                        is1D;
 @property (nonatomic)         BOOL                        is2D;
 @property (nonatomic)         BOOL                        capturing;
@@ -224,6 +225,9 @@
                                resultWithStatus: CDVCommandStatus_OK
                                messageAsDictionary: resultDict
                                ];
+    
+    [result setKeepCallbackAsBool:YES];
+
     [self.commandDelegate sendPluginResult:result callbackId:callback];
 }
 
@@ -273,6 +277,7 @@ parentViewController:(UIViewController*)parentViewController
     self.is1D      = YES;
     self.is2D      = YES;
     self.capturing = NO;
+    self.capturedText = nil;
     
     CFURLRef soundFileURLRef  = CFBundleCopyResourceURL(CFBundleGetMainBundle(), CFSTR("CDVBarcodeScanner.bundle/beep"), CFSTR ("caf"), NULL);
     AudioServicesCreateSystemSoundID(soundFileURLRef, &_soundFileObject);
@@ -291,6 +296,7 @@ parentViewController:(UIViewController*)parentViewController
     self.alternateXib = nil;
     
     self.capturing = NO;
+    self.capturedText = nil;
     
     AudioServicesRemoveSystemSoundCompletion(_soundFileObject);
     AudioServicesDisposeSystemSoundID(_soundFileObject);
@@ -340,9 +346,13 @@ parentViewController:(UIViewController*)parentViewController
 
 //--------------------------------------------------------------------------
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format {
-    [self barcodeScanDone];
-    AudioServicesPlaySystemSound(_soundFileObject);
-    [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
+//    [self barcodeScanDone];
+    NSLog(@"%@", text);
+    if(![self.capturedText isEqualToString:text]){
+        self.capturedText = text;
+        AudioServicesPlaySystemSound(_soundFileObject);
+        [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
+    }
 }
 
 //--------------------------------------------------------------------------
