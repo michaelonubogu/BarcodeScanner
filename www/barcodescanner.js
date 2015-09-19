@@ -122,6 +122,19 @@
             ]);
         };
 
+        BarcodeScanner.prototype.setStatusCharacter = function (character, successCallback, errorCallback) {
+
+            if (typeof successCallback != "function") {
+                console.log("BarcodeScanner.encode failure: success callback parameter must be a function");
+                return;
+            }
+            if (errorCallback == null) {
+               errorCallback = function () {};
+            }
+               
+           exec(successCallback, errorCallback, 'BarcodeScanner', 'setStatusCharacter', [ character]);
+        };
+
         var barcodeScanner = new BarcodeScanner();
         module.exports = barcodeScanner;
 

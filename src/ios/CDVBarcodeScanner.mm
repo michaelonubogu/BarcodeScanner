@@ -46,9 +46,12 @@
 // plugin class
 //------------------------------------------------------------------------------
 @interface CDVBarcodeScanner : CDVPlugin {}
+@property (nonatomic, retain) CDVbcsProcessor*           processor;
+
 - (NSString*)isScanNotPossible;
 - (void)scan:(CDVInvokedUrlCommand*)command;
 - (void)encode:(CDVInvokedUrlCommand*)command;
+- (void)setStatusCharacter:(CDVInvokedUrlCommand*)command;
 - (void)returnImage:(NSString*)filePath format:(NSString*)format callback:(NSString*)callback;
 - (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped callback:(NSString*)callback;
 - (void)returnError:(NSString*)message callback:(NSString*)callback;
@@ -65,7 +68,7 @@
 @property (nonatomic, retain) AVCaptureSession*           captureSession;
 @property (nonatomic, retain) AVCaptureVideoPreviewLayer* previewLayer;
 @property (nonatomic, retain) NSString*                   alternateXib;
-@property (nonatomic, retain) NSString*                   capturedText;
+@property (nonatomic, retain) NSMutableArray*             capturedText;
 @property (nonatomic)         BOOL                        is1D;
 @property (nonatomic)         BOOL                        is2D;
 @property (nonatomic)         BOOL                        capturing;
@@ -104,6 +107,7 @@
 @property (nonatomic, retain) CDVbcsProcessor*  processor;
 @property (nonatomic, retain) NSString*        alternateXib;
 @property (nonatomic)         BOOL             shutterPressed;
+@property (nonatomic, retain) UIToolbar*       toolbar;
 @property (nonatomic, retain) IBOutlet UIView* overlayView;
 // unsafe_unretained is equivalent to assign - used to prevent retain cycles in the property below
 @property (nonatomic, unsafe_unretained) id orientationDelegate;
@@ -155,19 +159,37 @@
         return;
     }
     
-    processor = [[CDVbcsProcessor alloc]
+    self.processor = [[CDVbcsProcessor alloc]
                  initWithPlugin:self
                  callback:callback
                  parentViewController:self.viewController
                  alterateOverlayXib:overlayXib
                  ];
     #if CLEANUP_REFERENCES    
-    [processor retain];
-    [processor retain];
-    [processor retain];
+    [self.processor retain];
+    [self.processor retain];
+    [self.processor retain];
     #endif
     // queue [processor scanBarcode] to run on the event loop
-    [processor performSelector:@selector(scanBarcode) withObject:nil afterDelay:0];
+    [self.processor performSelector:@selector(scanBarcode) withObject:nil afterDelay:0];
+}
+//--------------------------------------------------------------------------
+
+- (void)setStatusCharacter:(CDVInvokedUrlCommand*)command {
+    
+    NSString*       callback;
+    callback = command.callbackId;
+    
+    if([command.arguments count] < 1)
+        [self returnError:@"Too few arguments!" callback:command.callbackId];
+    
+    if(self.processor == nil)
+        [self returnError:@"Open Scanner first" callback:command.callbackId];
+
+    NSLog(@"%@", command.arguments[0]);
+    UIToolbar *toolbar = self.processor.viewController.toolbar;
+    [[[toolbar items] objectAtIndex:3] setTitle: command.arguments[0]];
+
 }
 
 //--------------------------------------------------------------------------
@@ -277,7 +299,7 @@ parentViewController:(UIViewController*)parentViewController
     self.is1D      = YES;
     self.is2D      = YES;
     self.capturing = NO;
-    self.capturedText = nil;
+    self.capturedText = [[NSMutableArray alloc] init];
     
     CFURLRef soundFileURLRef  = CFBundleCopyResourceURL(CFBundleGetMainBundle(), CFSTR("CDVBarcodeScanner.bundle/beep"), CFSTR ("caf"), NULL);
     AudioServicesCreateSystemSoundID(soundFileURLRef, &_soundFileObject);
@@ -320,6 +342,19 @@ parentViewController:(UIViewController*)parentViewController
     self.viewController = [[CDVbcsViewController alloc] initWithProcessor: self alternateOverlay:self.alternateXib];
     // here we set the orientation delegate to the MainViewController of the app (orientation controlled in the Project Settings)
     self.viewController.orientationDelegate = self.plugin.viewController;
+
+//    self.viewController.view.backgroundColor = [UIColor clearColor];
+//    self.viewController.view.opaque = NO;
+//    self.viewController.view.clipsToBounds = YES;
+//    self.viewController.view.userInteractionEnabled = YES;
+//    
+//    self.viewController.modalPresentationStyle = UIModalPresentationCustom;
+    
+//    int width = 200;
+//    int height = 200;
+//    int x = 0;
+//    int y = 0;
+//    self.viewController.view.bounds = CGRectMake(x,y,width,height);
     
     // delayed [self openDialog];
     [self performSelector:@selector(openDialog) withObject:nil afterDelay:1];
@@ -347,9 +382,11 @@ parentViewController:(UIViewController*)parentViewController
 //--------------------------------------------------------------------------
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format {
 //    [self barcodeScanDone];
-    NSLog(@"%@", text);
-    if(![self.capturedText isEqualToString:text]){
-        self.capturedText = text;
+    if(![self.capturedText containsObject:text]){
+        NSLog(@"%@", text);
+        UIToolbar *toolbar = self.viewController.toolbar;
+        [[[toolbar items] objectAtIndex:3] setTitle: @""];
+        [self.capturedText addObject: text];
         AudioServicesPlaySystemSound(_soundFileObject);
         [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
     }
@@ -661,7 +698,7 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
 
 - (void)flipCameraButtonPressed:(id)sender
 {
-    [self.processor performSelector:@selector(flipCamera) withObject:nil afterDelay:0];
+
 }
 
 //--------------------------------------------------------------------------
@@ -709,10 +746,17 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
                     action:nil
                     ];
     
+//    id settingsButton = [[UIBarButtonItem alloc]
+//                         initWithTitle:@"\u2699"
+//                         style:UIBarButtonItemStylePlain
+//                         target:self
+//                         action:@selector(showSettings)];
+
     id flipCamera = [[UIBarButtonItem alloc]
-                       initWithBarButtonSystemItem:UIBarButtonSystemItemCamera
+                     initWithTitle:@""
+                     style:UIBarButtonItemStylePlain
                        target:(id)self
-                       action:@selector(flipCameraButtonPressed:)
+                       action:@selector(cancelButtonPressed:)
                        ];
     
 #if USE_SHUTTER
@@ -761,6 +805,8 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     
     [overlayView addSubview: reticleView];
     
+    self.toolbar = toolbar;
+    
     return overlayView;
 }
 
@@ -779,16 +825,16 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     UIGraphicsBeginImageContext(CGSizeMake(RETICLE_SIZE, RETICLE_SIZE));
     CGContextRef context = UIGraphicsGetCurrentContext();
     
-    if (self.processor.is1D) {
-        UIColor* color = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:RETICLE_ALPHA];
-        CGContextSetStrokeColorWithColor(context, color.CGColor);
-        CGContextSetLineWidth(context, RETICLE_WIDTH);
-        CGContextBeginPath(context);
-        CGFloat lineOffset = RETICLE_OFFSET+(0.5*RETICLE_WIDTH);
-        CGContextMoveToPoint(context, lineOffset, RETICLE_SIZE/2);
-        CGContextAddLineToPoint(context, RETICLE_SIZE-lineOffset, 0.5*RETICLE_SIZE);
-        CGContextStrokePath(context);
-    }
+//    if (self.processor.is1D) {
+//        UIColor* color = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:RETICLE_ALPHA];
+//        CGContextSetStrokeColorWithColor(context, color.CGColor);
+//        CGContextSetLineWidth(context, RETICLE_WIDTH);
+//        CGContextBeginPath(context);
+//        CGFloat lineOffset = RETICLE_OFFSET+(0.5*RETICLE_WIDTH);
+//        CGContextMoveToPoint(context, lineOffset, RETICLE_SIZE/2);
+//        CGContextAddLineToPoint(context, RETICLE_SIZE-lineOffset, 0.5*RETICLE_SIZE);
+//        CGContextStrokePath(context);
+//    }
     
     if (self.processor.is2D) {
         UIColor* color = [UIColor colorWithRed:0.0 green:1.0 blue:0.0 alpha:RETICLE_ALPHA];
