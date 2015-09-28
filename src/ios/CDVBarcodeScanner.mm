@@ -188,7 +188,7 @@
 
     NSLog(@"%@", command.arguments[0]);
     UIToolbar *toolbar = self.processor.viewController.toolbar;
-    [[[toolbar items] objectAtIndex:3] setTitle: command.arguments[0]];
+    [[[toolbar items] objectAtIndex:2] setTitle: command.arguments[0]];
 
 }
 
@@ -385,7 +385,7 @@ parentViewController:(UIViewController*)parentViewController
     if(![self.capturedText containsObject:text]){
         NSLog(@"%@", text);
         UIToolbar *toolbar = self.viewController.toolbar;
-        [[[toolbar items] objectAtIndex:3] setTitle: @""];
+        [[[toolbar items] objectAtIndex:2] setTitle: @""];
         [self.capturedText addObject: text];
         AudioServicesPlaySystemSound(_soundFileObject);
         [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
@@ -768,7 +768,7 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     
     toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, flipCamera ,shutterButton,nil];
 #else
-    toolbar.items = [NSArray arrayWithObjects:flexSpace,cancelButton,flexSpace, flipCamera,nil];
+    toolbar.items = [NSArray arrayWithObjects:cancelButton,flexSpace,flipCamera,nil];
 #endif
     bounds = overlayView.bounds;
     
