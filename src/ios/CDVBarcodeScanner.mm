@@ -14,6 +14,7 @@
 
 #import <Cordova/CDVPlugin.h>
 
+#import <Firebase/Firebase.h>
 
 //------------------------------------------------------------------------------
 // Delegate to handle orientation functions
@@ -74,7 +75,8 @@
 @property (nonatomic)         BOOL                        capturing;
 @property (nonatomic)         BOOL                        isFrontCamera;
 @property (nonatomic)         BOOL                        isFlipped;
-
+@property (nonatomic, retain) NSString*                   school_id;
+@property (nonatomic, retain) NSString*                   event_id;
 
 - (id)initWithPlugin:(CDVBarcodeScanner*)plugin callback:(NSString*)callback parentViewController:(UIViewController*)parentViewController alterateOverlayXib:(NSString *)alternateXib;
 - (void)scanBarcode;
@@ -140,7 +142,7 @@
 
 //--------------------------------------------------------------------------
 - (void)scan:(CDVInvokedUrlCommand*)command {
-    CDVbcsProcessor* processor;
+//    CDVbcsProcessor* processor;
     NSString*       callback;
     NSString*       capabilityError;
     
@@ -148,10 +150,8 @@
     
     // We allow the user to define an alternate xib file for loading the overlay.
     NSString *overlayXib = nil;
-    if ( [command.arguments count] >= 1 )
-    {
-        overlayXib = [command.arguments objectAtIndex:0];
-    }
+
+
     
     capabilityError = [self isScanNotPossible];
     if (capabilityError) {
@@ -160,16 +160,51 @@
     }
     
     self.processor = [[CDVbcsProcessor alloc]
-                 initWithPlugin:self
-                 callback:callback
-                 parentViewController:self.viewController
-                 alterateOverlayXib:overlayXib
-                 ];
-    #if CLEANUP_REFERENCES    
+                      initWithPlugin:self
+                      callback:callback
+                      parentViewController:self.viewController
+                      alterateOverlayXib:overlayXib
+                      ];
+
+    
+    if ( [command.arguments count] >= 1 )
+    {
+        self.processor.school_id  = [command.arguments objectAtIndex:0][@"school_id"];
+        self.processor.event_id  = [command.arguments objectAtIndex:0][@"event_id"];
+        
+        Firebase *ref = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com"];
+
+        NSString *email = [command.arguments objectAtIndex:0][@"email"];
+        NSString *password = [command.arguments objectAtIndex:0][@"password"];
+        [ref authUser:email password:password withCompletionBlock:^(NSError *error, FAuthData *authData) {
+            if (error) {
+                // Something went wrong. :(
+                NSLog(@"Error: %@", error);
+            }
+            NSLog(@"Auth Data: %@", authData.token);
+            
+        }];
+        
+     
+        Firebase *eventTicketsRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/tickets"];
+        [[[eventTicketsRef queryOrderedByChild:@"event_id"] queryEqualToValue:self.processor.event_id] keepSynced:YES];
+        [[[eventTicketsRef queryOrderedByChild:@"school_id"] queryEqualToValue:self.processor.school_id] keepSynced:YES];
+    }
+    
+    Firebase *connectedRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/.info/connected"];
+    [connectedRef observeEventType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
+        if([snapshot.value boolValue]) {
+            NSLog(@"connected");
+        } else {
+            NSLog(@"not connected");
+        }
+    }];
+    
+#if CLEANUP_REFERENCES
     [self.processor retain];
     [self.processor retain];
     [self.processor retain];
-    #endif
+#endif
     // queue [processor scanBarcode] to run on the event loop
     [self.processor performSelector:@selector(scanBarcode) withObject:nil afterDelay:0];
 }
@@ -185,11 +220,11 @@
     
     if(self.processor == nil)
         [self returnError:@"Open Scanner first" callback:command.callbackId];
-
+    
     NSLog(@"%@", command.arguments[0]);
     UIToolbar *toolbar = self.processor.viewController.toolbar;
     [[[toolbar items] objectAtIndex:2] setTitle: command.arguments[0]];
-
+    
 }
 
 //--------------------------------------------------------------------------
@@ -207,22 +242,22 @@
                  stringToEncode: command.arguments[0][@"data"]
                  ];
     
-    #if CLEANUP_REFERENCES    
+#if CLEANUP_REFERENCES
     [processor retain];
     [processor retain];
     [processor retain];
-    #endif
+#endif
     // queue [processor generateImage] to run on the event loop
     [processor performSelector:@selector(generateImage) withObject:nil afterDelay:0];
 }
 
 - (void)returnImage:(NSString*)filePath format:(NSString*)format callback:(NSString*)callback{
-    #if CLEANUP_REFERENCES    
+#if CLEANUP_REFERENCES
     NSMutableDictionary* resultDict = [[[NSMutableDictionary alloc] init] autorelease];
-    #else
+#else
     NSMutableDictionary* resultDict = [[NSMutableDictionary alloc] init];
-    #endif
-
+#endif
+    
     [resultDict setObject:format forKey:@"format"];
     [resultDict setObject:filePath forKey:@"file"];
     
@@ -249,7 +284,7 @@
                                ];
     
     [result setKeepCallbackAsBool:YES];
-
+    
     [self.commandDelegate sendPluginResult:result callbackId:callback];
 }
 
@@ -323,16 +358,16 @@ parentViewController:(UIViewController*)parentViewController
     AudioServicesRemoveSystemSoundCompletion(_soundFileObject);
     AudioServicesDisposeSystemSoundID(_soundFileObject);
     
-    #if CLEANUP_REFERENCES    
+#if CLEANUP_REFERENCES
     [super dealloc];
-    #endif
+#endif
 }
 
 //--------------------------------------------------------------------------
 - (void)scanBarcode {
     
-//    self.captureSession = nil;
-//    self.previewLayer = nil;
+    //    self.captureSession = nil;
+    //    self.previewLayer = nil;
     NSString* errorMessage = [self setUpCaptureSession];
     if (errorMessage) {
         [self barcodeScanFailed:errorMessage];
@@ -342,19 +377,19 @@ parentViewController:(UIViewController*)parentViewController
     self.viewController = [[CDVbcsViewController alloc] initWithProcessor: self alternateOverlay:self.alternateXib];
     // here we set the orientation delegate to the MainViewController of the app (orientation controlled in the Project Settings)
     self.viewController.orientationDelegate = self.plugin.viewController;
-
-//    self.viewController.view.backgroundColor = [UIColor clearColor];
-//    self.viewController.view.opaque = NO;
-//    self.viewController.view.clipsToBounds = YES;
-//    self.viewController.view.userInteractionEnabled = YES;
-//    
-//    self.viewController.modalPresentationStyle = UIModalPresentationCustom;
     
-//    int width = 200;
-//    int height = 200;
-//    int x = 0;
-//    int y = 0;
-//    self.viewController.view.bounds = CGRectMake(x,y,width,height);
+    //    self.viewController.view.backgroundColor = [UIColor clearColor];
+    //    self.viewController.view.opaque = NO;
+    //    self.viewController.view.clipsToBounds = YES;
+    //    self.viewController.view.userInteractionEnabled = YES;
+    //
+    //    self.viewController.modalPresentationStyle = UIModalPresentationCustom;
+    
+    //    int width = 200;
+    //    int height = 200;
+    //    int x = 0;
+    //    int y = 0;
+    //    self.viewController.view.bounds = CGRectMake(x,y,width,height);
     
     // delayed [self openDialog];
     [self performSelector:@selector(openDialog) withObject:nil afterDelay:1];
@@ -381,14 +416,40 @@ parentViewController:(UIViewController*)parentViewController
 
 //--------------------------------------------------------------------------
 - (void)barcodeScanSucceeded:(NSString*)text format:(NSString*)format {
-//    [self barcodeScanDone];
+    //    [self barcodeScanDone];
     if(![self.capturedText containsObject:text]){
         NSLog(@"%@", text);
         UIToolbar *toolbar = self.viewController.toolbar;
-        [[[toolbar items] objectAtIndex:2] setTitle: @""];
+        [[[toolbar items] objectAtIndex:0] setTitle: text];
         [self.capturedText addObject: text];
+        
         AudioServicesPlaySystemSound(_soundFileObject);
-        [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
+        
+        Firebase *ticketsRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/tickets"];
+        
+        Firebase *ticketRef = [ticketsRef childByAppendingPath:text];
+        
+        [ticketRef observeSingleEventOfType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
+            NSLog(@"%@ -> %@", snapshot.key, snapshot.value);
+            if (snapshot.value) {
+                if(snapshot.value[@"redeemed_at"]){
+                    [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Already Redeemed ❌"];
+                } else if(snapshot.value[@"event_id"] && snapshot.value[@"event_id"] != self.event_id){
+                    [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Wrong Event ❌"];
+                } else if(snapshot.value[@"school_id"] && snapshot.value[@"school_id"] != self.school_id){
+                    [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Wrong School ❌"];
+                } else {
+                    NSDictionary *data = @{@"redeemed_at": kFirebaseServerValueTimestamp};
+                   
+                    [ticketRef updateChildValues: data];
+                    [[[toolbar items] objectAtIndex:2] setTitle: @"Valid ✓"];
+                }
+            } else {
+                [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Invalid Ticket ❌"];
+            }
+        }];
+        
+//        [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
     }
 }
 
@@ -401,7 +462,9 @@ parentViewController:(UIViewController*)parentViewController
 //--------------------------------------------------------------------------
 - (void)barcodeScanCancelled {
     [self barcodeScanDone];
-    [self.plugin returnSuccess:@"" format:@"" cancelled:TRUE flipped:self.isFlipped callback:self.callback];
+    NSString *qrCode = [self.capturedText lastObject];
+    if(!qrCode){qrCode = @"CANCELLED";}
+    [self.plugin returnSuccess:qrCode format:@"TEXT_TYPE" cancelled:TRUE flipped:self.isFlipped callback:self.callback];
     if (self.isFlipped) {
         self.isFlipped = NO;
     }
@@ -437,15 +500,15 @@ parentViewController:(UIViewController*)parentViewController
         if (!device) return @"unable to obtain video capture device";
         
     }
-
+    
     
     //
     // Input
-    //    
-
+    //
+    
     AVCaptureDeviceInput* input = [AVCaptureDeviceInput deviceInputWithDevice:device error:&error];
     if (!input) return @"unable to obtain video capture device input";
-
+    
     captureSession.sessionPreset = AVCaptureSessionPresetMedium;
     
     if ([captureSession canAddInput:input]) {
@@ -454,14 +517,14 @@ parentViewController:(UIViewController*)parentViewController
     else {
         return @"unable to add video capture device input to session";
     }
-     
+    
     //
     // Output
-    //    
-
+    //
+    
     AVCaptureMetadataOutput* output = [[AVCaptureMetadataOutput alloc] init];
     if (!output) return @"unable to obtain metadata capture output";
-
+    
     //add the output to the session before setting metadataobject types.
     if ([captureSession canAddOutput:output]) {
         [captureSession addOutput:output];
@@ -469,24 +532,24 @@ parentViewController:(UIViewController*)parentViewController
     else {
         return @"unable to add video capture output to session";
     }
-
+    
     [output setMetadataObjectsDelegate:self queue:dispatch_get_main_queue()];
     output.metadataObjectTypes = @[
-        AVMetadataObjectTypeUPCECode,
-        AVMetadataObjectTypeCode39Code,
-        AVMetadataObjectTypeEAN13Code,
-        AVMetadataObjectTypeEAN8Code,
-        AVMetadataObjectTypeCode93Code,
-        AVMetadataObjectTypeCode128Code,
-        AVMetadataObjectTypeQRCode,
-        AVMetadataObjectTypeITF14Code,
-        AVMetadataObjectTypeDataMatrixCode
-    ];
-
+                                   AVMetadataObjectTypeUPCECode,
+                                   AVMetadataObjectTypeCode39Code,
+                                   AVMetadataObjectTypeEAN13Code,
+                                   AVMetadataObjectTypeEAN8Code,
+                                   AVMetadataObjectTypeCode93Code,
+                                   AVMetadataObjectTypeCode128Code,
+                                   AVMetadataObjectTypeQRCode,
+                                   AVMetadataObjectTypeITF14Code,
+                                   AVMetadataObjectTypeDataMatrixCode
+                                   ];
+    
     if (![captureSession canSetSessionPreset:AVCaptureSessionPresetMedium]) {
         return @"unable to preset medium quality video capture";
     }
-  
+    
     // setup capture preview layer
     self.previewLayer = [AVCaptureVideoPreviewLayer layerWithSession:captureSession];
     
@@ -514,20 +577,20 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
 // convert barcode format to string
 //--------------------------------------------------------------------------
 - (NSString*)formatStringFrom:(NSString*)format {
-   if( [format isEqualToString:AVMetadataObjectTypeUPCECode] ) return @"UPC_E";
-   if( [format isEqualToString:AVMetadataObjectTypeCode39Code] ) return @"CODE_39";
-   // if( [format isEqualToString:AVMetadataObjectTypeCode39Mod43Code] ) return @"";
-   if( [format isEqualToString:AVMetadataObjectTypeEAN13Code] ) return @"EAN_13";
-   if( [format isEqualToString:AVMetadataObjectTypeEAN8Code] ) return @"EAN_8";
-   if( [format isEqualToString:AVMetadataObjectTypeCode93Code] ) return @"CODE_93";
-   if( [format isEqualToString:AVMetadataObjectTypeCode128Code] ) return @"CODE_128";
-   // if( [format isEqualToString:AVMetadataObjectTypePDF417Code] ) return @"";
-   if( [format isEqualToString:AVMetadataObjectTypeQRCode] ) return @"QR_CODE";
-   // if( [format isEqualToString:AVMetadataObjectTypeAztecCode] ) return @"";
-   // if( [format isEqualToString:AVMetadataObjectTypeInterleaved2of5Code] ) return @"";
-   if( [format isEqualToString:AVMetadataObjectTypeITF14Code] ) return @"ITF";
-   if( [format isEqualToString:AVMetadataObjectTypeDataMatrixCode] ) return @"DATA_MATRIX";
-   return @"???";
+    if( [format isEqualToString:AVMetadataObjectTypeUPCECode] ) return @"UPC_E";
+    if( [format isEqualToString:AVMetadataObjectTypeCode39Code] ) return @"CODE_39";
+    // if( [format isEqualToString:AVMetadataObjectTypeCode39Mod43Code] ) return @"";
+    if( [format isEqualToString:AVMetadataObjectTypeEAN13Code] ) return @"EAN_13";
+    if( [format isEqualToString:AVMetadataObjectTypeEAN8Code] ) return @"EAN_8";
+    if( [format isEqualToString:AVMetadataObjectTypeCode93Code] ) return @"CODE_93";
+    if( [format isEqualToString:AVMetadataObjectTypeCode128Code] ) return @"CODE_128";
+    // if( [format isEqualToString:AVMetadataObjectTypePDF417Code] ) return @"";
+    if( [format isEqualToString:AVMetadataObjectTypeQRCode] ) return @"QR_CODE";
+    // if( [format isEqualToString:AVMetadataObjectTypeAztecCode] ) return @"";
+    // if( [format isEqualToString:AVMetadataObjectTypeInterleaved2of5Code] ) return @"";
+    if( [format isEqualToString:AVMetadataObjectTypeITF14Code] ) return @"ITF";
+    if( [format isEqualToString:AVMetadataObjectTypeDataMatrixCode] ) return @"DATA_MATRIX";
+    return @"???";
 }
 
 @end
@@ -559,9 +622,9 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     self.callback = nil;
     self.stringToEncode = nil;
     
-    #if CLEANUP_REFERENCES    
+#if CLEANUP_REFERENCES
     [super dealloc];
-    #endif
+#endif
 }
 //--------------------------------------------------------------------------
 - (void)generateImage{
@@ -636,13 +699,13 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
 //--------------------------------------------------------------------------
 - (void)dealloc {
     self.view = nil;
-//    self.processor = nil;
+    //    self.processor = nil;
     self.shutterPressed = NO;
     self.alternateXib = nil;
     self.overlayView = nil;
-    #if CLEANUP_REFERENCES    
+#if CLEANUP_REFERENCES
     [super dealloc];
-    #endif
+#endif
 }
 
 //--------------------------------------------------------------------------
@@ -698,7 +761,7 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
 
 - (void)flipCameraButtonPressed:(id)sender
 {
-
+    
 }
 
 //--------------------------------------------------------------------------
@@ -729,12 +792,13 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     overlayView.autoresizesSubviews = YES;
     overlayView.autoresizingMask    = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     overlayView.opaque              = NO;
-
+    
     UIToolbar* toolbar = [[UIToolbar alloc] init];
     toolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
     
     id cancelButton = [[UIBarButtonItem alloc]
-                       initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
+                       initWithTitle:@"Cancel"
+                       style:UIBarButtonItemStylePlain
                        target:(id)self
                        action:@selector(cancelButtonPressed:)
                        ];
@@ -746,18 +810,18 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
                     action:nil
                     ];
     
-//    id settingsButton = [[UIBarButtonItem alloc]
-//                         initWithTitle:@"\u2699"
-//                         style:UIBarButtonItemStylePlain
-//                         target:self
-//                         action:@selector(showSettings)];
-
+    //    id settingsButton = [[UIBarButtonItem alloc]
+    //                         initWithTitle:@"\u2699"
+    //                         style:UIBarButtonItemStylePlain
+    //                         target:self
+    //                         action:@selector(showSettings)];
+    
     id flipCamera = [[UIBarButtonItem alloc]
                      initWithTitle:@""
                      style:UIBarButtonItemStylePlain
-                       target:(id)self
-                       action:@selector(cancelButtonPressed:)
-                       ];
+                     target:(id)self
+                     action:@selector(cancelButtonPressed:)
+                     ];
     
 #if USE_SHUTTER
     id shutterButton = [[UIBarButtonItem alloc]
@@ -825,16 +889,16 @@ didOutputMetadataObjects:(NSArray *)metadataObjects
     UIGraphicsBeginImageContext(CGSizeMake(RETICLE_SIZE, RETICLE_SIZE));
     CGContextRef context = UIGraphicsGetCurrentContext();
     
-//    if (self.processor.is1D) {
-//        UIColor* color = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:RETICLE_ALPHA];
-//        CGContextSetStrokeColorWithColor(context, color.CGColor);
-//        CGContextSetLineWidth(context, RETICLE_WIDTH);
-//        CGContextBeginPath(context);
-//        CGFloat lineOffset = RETICLE_OFFSET+(0.5*RETICLE_WIDTH);
-//        CGContextMoveToPoint(context, lineOffset, RETICLE_SIZE/2);
-//        CGContextAddLineToPoint(context, RETICLE_SIZE-lineOffset, 0.5*RETICLE_SIZE);
-//        CGContextStrokePath(context);
-//    }
+    //    if (self.processor.is1D) {
+    //        UIColor* color = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:RETICLE_ALPHA];
+    //        CGContextSetStrokeColorWithColor(context, color.CGColor);
+    //        CGContextSetLineWidth(context, RETICLE_WIDTH);
+    //        CGContextBeginPath(context);
+    //        CGFloat lineOffset = RETICLE_OFFSET+(0.5*RETICLE_WIDTH);
+    //        CGContextMoveToPoint(context, lineOffset, RETICLE_SIZE/2);
+    //        CGContextAddLineToPoint(context, RETICLE_SIZE-lineOffset, 0.5*RETICLE_SIZE);
+    //        CGContextStrokePath(context);
+    //    }
     
     if (self.processor.is2D) {
         UIColor* color = [UIColor colorWithRed:0.0 green:1.0 blue:0.0 alpha:RETICLE_ALPHA];
