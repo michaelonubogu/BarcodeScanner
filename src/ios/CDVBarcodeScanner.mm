@@ -439,7 +439,10 @@ parentViewController:(UIViewController*)parentViewController
                 } else if(snapshot.value[@"school_id"] && snapshot.value[@"school_id"] != self.school_id){
                     [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Wrong School ❌"];
                 } else {
-                    NSDictionary *data = @{@"redeemed_at": kFirebaseServerValueTimestamp};
+                    NSDictionary *data = @{
+                        @"redeemed_at": kFirebaseServerValueTimestamp,
+                        @"event_id": self.event_id
+                    };
                    
                     [ticketRef updateChildValues: data];
                     [[[toolbar items] objectAtIndex:2] setTitle: @"Valid ✓"];
