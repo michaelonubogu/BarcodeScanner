@@ -53,6 +53,7 @@
 - (void)scan:(CDVInvokedUrlCommand*)command;
 - (void)encode:(CDVInvokedUrlCommand*)command;
 - (void)setStatusCharacter:(CDVInvokedUrlCommand*)command;
+- (void)syncTickets:(CDVInvokedUrlCommand*)command;
 - (void)returnImage:(NSString*)filePath format:(NSString*)format callback:(NSString*)callback;
 - (void)returnSuccess:(NSString*)scannedText format:(NSString*)format cancelled:(BOOL)cancelled flipped:(BOOL)flipped callback:(NSString*)callback;
 - (void)returnError:(NSString*)message callback:(NSString*)callback;
@@ -166,32 +167,28 @@
                       alterateOverlayXib:overlayXib
                       ];
 
+    [[UIApplication sharedApplication] setIdleTimerDisabled:YES];
     
     if ( [command.arguments count] >= 1 )
     {
         self.processor.school_id  = [command.arguments objectAtIndex:0][@"school_id"];
         self.processor.event_id  = [command.arguments objectAtIndex:0][@"event_id"];
         
-        Firebase *ref = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com"];
+        Firebase *ref = [[Firebase alloc] initWithUrl:@"https://gofan.firebaseio.com"];
 
         NSString *email = [command.arguments objectAtIndex:0][@"email"];
         NSString *password = [command.arguments objectAtIndex:0][@"password"];
         [ref authUser:email password:password withCompletionBlock:^(NSError *error, FAuthData *authData) {
             if (error) {
-                // Something went wrong. :(
                 NSLog(@"Error: %@", error);
             }
             NSLog(@"Auth Data: %@", authData.token);
             
         }];
-        
-     
-        Firebase *eventTicketsRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/tickets"];
-        [[[eventTicketsRef queryOrderedByChild:@"event_id"] queryEqualToValue:self.processor.event_id] keepSynced:YES];
-        [[[eventTicketsRef queryOrderedByChild:@"school_id"] queryEqualToValue:self.processor.school_id] keepSynced:YES];
     }
     
-    Firebase *connectedRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/.info/connected"];
+    Firebase *connectedRef = [[Firebase alloc] initWithUrl:@"https://gofan.firebaseio.com/.info/connected"];
+    
     [connectedRef observeEventType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
         if([snapshot.value boolValue]) {
             NSLog(@"connected");
@@ -227,6 +224,55 @@
     
 }
 
+- (void)syncTickets:(CDVInvokedUrlCommand *)command {
+    
+    NSString*       callback;
+    NSString*       school_id;
+    NSString*       event_id;
+    callback = command.callbackId;
+    
+    school_id  = [command.arguments objectAtIndex:0][@"school_id"];
+    event_id  = [command.arguments objectAtIndex:0][@"event_id"];
+    
+    Firebase *ticketsRef = [[Firebase alloc] initWithUrl:@"https://gofan.firebaseio.com/tickets"];
+    FQuery *eventTicketsRef = [[ticketsRef queryOrderedByChild:@"event_id"] queryEqualToValue:event_id];
+    [eventTicketsRef keepSynced:YES];
+    
+    FQuery *schoolTicketsRef = [[ticketsRef queryOrderedByChild:@"school_id"] queryEqualToValue:school_id];
+    [schoolTicketsRef keepSynced:YES];
+
+    NSMutableDictionary* resultDict = [[NSMutableDictionary alloc] init];
+    
+    CDVPluginResult* result = [CDVPluginResult
+                               resultWithStatus: CDVCommandStatus_OK
+                               messageAsDictionary: resultDict
+                               ];
+    
+    [result setKeepCallbackAsBool:YES];
+    
+    [schoolTicketsRef observeSingleEventOfType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
+        [resultDict setObject:school_id forKey:@"school_id"];
+        [self.commandDelegate sendPluginResult:result callbackId:callback];
+    }];
+    
+    [eventTicketsRef observeSingleEventOfType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
+        [resultDict setObject:event_id forKey:@"event_id"];
+        [self.commandDelegate sendPluginResult:result callbackId:callback];
+    }];
+    
+    Firebase *ref = [[Firebase alloc] initWithUrl:@"https://gofan.firebaseio.com"];
+    
+    NSString *email = [command.arguments objectAtIndex:0][@"email"];
+    NSString *password = [command.arguments objectAtIndex:0][@"password"];
+    [ref authUser:email password:password withCompletionBlock:^(NSError *error, FAuthData *authData) {
+        if (error) {
+            NSLog(@"Error: %@", error);
+        }
+        NSLog(@"Auth Data: %@", authData.token);
+        
+    }];
+    
+}
 //--------------------------------------------------------------------------
 - (void)encode:(CDVInvokedUrlCommand*)command {
     if([command.arguments count] < 1)
@@ -409,6 +455,8 @@ parentViewController:(UIViewController*)parentViewController
     [self.captureSession stopRunning];
     [self.parentViewController dismissViewControllerAnimated:YES completion:nil];
     
+    [[UIApplication sharedApplication] setIdleTimerDisabled:NO];
+    
     // viewcontroller holding onto a reference to us, release them so they
     // will release us
     self.viewController = nil;
@@ -421,38 +469,66 @@ parentViewController:(UIViewController*)parentViewController
         NSLog(@"%@", text);
         UIToolbar *toolbar = self.viewController.toolbar;
         [[[toolbar items] objectAtIndex:0] setTitle: text];
+        [[[toolbar items] objectAtIndex:2] setTitle: @""];
+        toolbar.backgroundColor = [UIColor grayColor];
         [self.capturedText addObject: text];
         
         AudioServicesPlaySystemSound(_soundFileObject);
         
-        Firebase *ticketsRef = [[Firebase alloc] initWithUrl:@"https://huddle-tix-staging.firebaseio.com/tickets"];
+        Firebase *ticketsRef = [[Firebase alloc] initWithUrl:@"https://gofan.firebaseio.com/tickets"];
         
         Firebase *ticketRef = [ticketsRef childByAppendingPath:text];
         
         [ticketRef observeSingleEventOfType:FEventTypeValue withBlock:^(FDataSnapshot *snapshot) {
             NSLog(@"%@ -> %@", snapshot.key, snapshot.value);
-            if (snapshot.value) {
+            if ([snapshot exists]) {
+                if(snapshot.value[@"type"]) [[[toolbar items] objectAtIndex:0] setTitle: snapshot.value[@"type"]];
+                if(snapshot.value[@"name"]) [[[toolbar items] objectAtIndex:0] setTitle: snapshot.value[@"name"]];
                 if(snapshot.value[@"redeemed_at"]){
                     [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Already Redeemed ❌"];
+                    [toolbar setBackgroundColor:[UIColor redColor]];
+                    AudioServicesPlaySystemSound(1006);
                 } else if(snapshot.value[@"event_id"] && snapshot.value[@"event_id"] != self.event_id){
                     [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Wrong Event ❌"];
+                    [toolbar setBackgroundColor:[UIColor redColor]];
+                    AudioServicesPlaySystemSound(1006);
                 } else if(snapshot.value[@"school_id"] && snapshot.value[@"school_id"] != self.school_id){
                     [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Wrong School ❌"];
+                    [toolbar setBackgroundColor:[UIColor redColor]];
+                    AudioServicesPlaySystemSound(1006);
                 } else {
                     NSDictionary *data = @{
-                        @"redeemed_at": kFirebaseServerValueTimestamp,
-                        @"event_id": self.event_id
+                      @"redeemed_at": kFirebaseServerValueTimestamp,
+                      @"event_id": self.event_id
                     };
-                   
+
                     [ticketRef updateChildValues: data];
                     [[[toolbar items] objectAtIndex:2] setTitle: @"Valid ✓"];
+                    AudioServicesPlaySystemSound(1008);
+                    [toolbar setBackgroundColor:[UIColor greenColor]];
                 }
+
+                NSMutableDictionary *data = [NSMutableDictionary
+                                             dictionaryWithDictionary:@{
+                  @"$id" : snapshot.key,
+                  @"error" : [[[toolbar items] objectAtIndex:2] title]
+                }];
+                [data addEntriesFromDictionary: snapshot.value];
+                
+                CDVPluginResult* result = [CDVPluginResult
+                                           resultWithStatus: CDVCommandStatus_OK
+                                           messageAsDictionary: data];
+                
+                [result setKeepCallbackAsBool:YES];
+                
+                [self.plugin.commandDelegate sendPluginResult:result callbackId:self.callback];
+
             } else {
                 [[[toolbar items] objectAtIndex:2] setTitle: @"❌ Invalid Ticket ❌"];
+                [toolbar setBackgroundColor:[UIColor redColor]];
+                AudioServicesPlaySystemSound(1006);
             }
         }];
-        
-//        [self.plugin returnSuccess:text format:format cancelled:FALSE flipped:FALSE callback:self.callback];
     }
 }
 
