@@ -58,10 +58,6 @@
                 "upc_E": 32768,
                 "upc_EAN_EXTENSION": 65536
             };
-            
-            this.killScanner = function(){
-                
-            }
         };
         
         /**
@@ -107,7 +103,7 @@
         //-------------------------------------------------------------------
         
         /**
-         * Read code from scanner, but keep camera open until keepScanning flag == false.
+         * Read code from scanner
          *
          * @param {Function} successCallback This function will recieve a result object: {
          *        text : '12345-mock',    // The code that was scanned.
@@ -144,7 +140,7 @@
                 return;
             }
             
-            var successCallbackWrapper = function(){
+            var successCallbackWrapper = function(result){
                 if (typeof successCallback == "function"){
                     successCallback();
                 }
