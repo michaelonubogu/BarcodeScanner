@@ -142,7 +142,7 @@
             
             var successCallbackWrapper = function(result){
                 if (typeof successCallback == "function"){
-                    successCallback();
+                    successCallback(result);
                 }
                 //recursively call continous scan
                 self.scanContinous(successCallback, errorCallback, config);
