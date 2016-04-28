@@ -58,8 +58,12 @@
                 "upc_E": 32768,
                 "upc_EAN_EXTENSION": 65536
             };
+            
+            this.killScanner = function(){
+                
+            }
         };
-
+        
         /**
          * Read code from scanner.
          *
@@ -99,7 +103,58 @@
 
             exec(successCallback, errorCallback, 'BarcodeScanner', 'scan', config);
         };
+        
+        //-------------------------------------------------------------------
+        
+        /**
+         * Read code from scanner, but keep camera open until keepScanning flag == false.
+         *
+         * @param {Function} successCallback This function will recieve a result object: {
+         *        text : '12345-mock',    // The code that was scanned.
+         *        format : 'FORMAT_NAME', // Code format.
+         *        cancelled : true/false, // Was canceled.
+         *    }
+         * @param {Function} errorCallback
+         */
+        BarcodeScanner.prototype.scanContinous = function(successCallback, errorCallback, config){
+            var self = this;
+            
+            if(config instanceof Array) {
+                // do nothing
+            } else {
+                if(typeof(config) === 'object') {
+                    config = [ config ];
+                } else {
+                    config = [];
+                }
+            }
+            
+            if (errorCallback == null) {
+                errorCallback = function () {
+                };
+            }
+            
+            if (typeof errorCallback != "function") {
+                console.log("BarcodeScanner.encode failure: failure parameter not a function");
+                return;
+            }
 
+            if (typeof successCallback != "function") {
+                console.log("BarcodeScanner.encode failure: success callback parameter must be a function");
+                return;
+            }
+            
+            var successCallbackWrapper = function(){
+                if (typeof successCallback == "function"){
+                    successCallback();
+                }
+                //recursively call continous scan
+                self.scanContinous(successCallback, errorCallback, config);
+            };
+            
+            exec(successCallbackWrapper, errorCallback, 'BarcodeScanner', 'scan', config);
+        }
+        
         //-------------------------------------------------------------------
         BarcodeScanner.prototype.encode = function (type, data, successCallback, errorCallback, options) {
             if (errorCallback == null) {

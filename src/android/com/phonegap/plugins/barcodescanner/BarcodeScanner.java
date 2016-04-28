@@ -140,6 +140,9 @@ public class BarcodeScanner extends CordovaPlugin {
                         } else if(value instanceof String) {
                             intentScan.putExtra(key, (String)value);
                         }
+                        else if(value instanceof Boolean){
+                            intentScan.putExtra(key, (Boolean)value);
+                        }
 
                     } catch(JSONException e) {
                         Log.i("CordovaLog", e.getLocalizedMessage());
